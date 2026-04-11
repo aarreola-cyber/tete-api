@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<body style="margin:0;background:black;color:white;font-size:28px;display:flex;justify-content:center;align-items:center;height:100vh;text-align:center;">
+
+<div id="texto">...</div>
+
+<script>
+async function hablar() {
+  const res = await fetch("https://tete-api-production.up.railway.app/mensaje", {
+    method: "POST"
+  });
+  const data = await res.json();
+  document.getElementById("texto").innerText = data.text;
+}
+
+setInterval(hablar, 4000);
+hablar();
+</script>
+
+</body>
+</html>
