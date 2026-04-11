@@ -1,10 +1,16 @@
 const express = require("express");
-const cors = require("cors");
 
 const app = express();
 
-app.use(cors());
 app.use(express.json());
+
+// 🔥 CORS MANUAL (esto sí funciona seguro)
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "*");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type");
+  next();
+});
 
 app.post("/mensaje", (req, res) => {
   res.json({ text: "ya volviste… sabía que no ibas a aguantar" });
