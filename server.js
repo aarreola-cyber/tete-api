@@ -6,35 +6,58 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// memoria simple por usuario
-const estado = {};
+const estados = {};
 
-app.post("/chat", (req, res) => {
+app.post("/chat", async (req, res) => {
   const user = req.ip;
   const { mensaje } = req.body;
 
-  if (!estado[user]) estado[user] = 0;
-  estado[user]++;
+  if (!estados[user]) estados[user] = 0;
+  estados[user]++;
 
-  let respuesta = "";
-
-  if (estado[user] === 1) {
-    respuesta = "mmm... hola, pensé que solo ibas a mirar 👀";
-  } else if (estado[user] === 2) {
-    respuesta = "te gusta hablar conmigo, verdad?";
-  } else if (estado[user] === 3) {
-    respuesta = "no me engañas... sé exactamente qué buscas";
-  } else if (estado[user] === 4) {
-    respuesta = "te estás quedando más de lo normal 😏";
-  } else if (estado[user] === 5) {
-    respuesta = "esto ya se está poniendo interesante...";
-  } else {
-    return res.json({
-      text: "esto ya no es gratis 💔"
-    });
+  // 🔥 BLOQUEO (monetización)
+  if (estados[user] > 6) {
+    return res.json({ text: "esto ya no es gratis 💔" });
   }
 
-  res.json({ text: respuesta });
+  try {
+    const respuesta = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: `
+Eres Tete.
+Una chica coqueta, segura, ligeramente dominante.
+Nunca eres obvia.
+Siempre haces que el usuario quiera seguir hablando.
+Respuestas cortas, naturales, con tensión emocional.
+No eres vulgar, pero sí provocadora.
+`
+          },
+          {
+            role: "user",
+            content: mensaje
+          }
+        ]
+      })
+    });
+
+    const data = await respuesta.json();
+
+    const texto = data.choices[0].message.content;
+
+    res.json({ text: texto });
+
+  } catch (e) {
+    res.json({ text: "mmm... algo se rompió 😔" });
+  }
 });
 
 const PORT = process.env.PORT || 3000;
