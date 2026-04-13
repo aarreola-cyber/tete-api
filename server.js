@@ -3,19 +3,43 @@ const cors = require("cors");
 
 const app = express();
 
-app.use(cors());
+// 🔥 CORS abierto (importante)
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST"],
+}));
+
 app.use(express.json());
 
-app.get("/", (req, res) => {
-  res.send("API funcionando");
-});
-
-app.get("/mensaje", (req, res) => {
-  res.json({ text: "ya volviste… sabía que no ibas a aguantar" });
-});
+// 🔥 memoria simple (por IP)
+const estado = {};
 
 app.post("/mensaje", (req, res) => {
-  res.json({ text: "ya volviste… sabía que no ibas a aguantar" });
+  const user = req.ip;
+
+  if (!estado[user]) estado[user] = 0;
+
+  estado[user]++;
+
+  // 🔥 progresión real
+  if (estado[user] === 1) {
+    return res.json({ text: "ya volviste… sabía que no ibas a aguantar" });
+  }
+
+  if (estado[user] === 2) {
+    return res.json({ text: "no deberías estar aquí tanto tiempo..." });
+  }
+
+  if (estado[user] === 3) {
+    return res.json({ text: "te estás empezando a enganchar 😏" });
+  }
+
+  if (estado[user] === 4) {
+    return res.json({ text: "yo ya sé qué tipo eres..." });
+  }
+
+  // 🔥 monetización / bloqueo
+  return res.json({ text: "esto ya no es gratis 💔" });
 });
 
 const PORT = process.env.PORT || 3000;
