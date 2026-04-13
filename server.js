@@ -3,43 +3,38 @@ const cors = require("cors");
 
 const app = express();
 
-// 🔥 CORS abierto (importante)
-app.use(cors({
-  origin: "*",
-  methods: ["GET", "POST"],
-}));
-
+app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// 🔥 memoria simple (por IP)
+// memoria simple por usuario
 const estado = {};
 
-app.post("/mensaje", (req, res) => {
+app.post("/chat", (req, res) => {
   const user = req.ip;
+  const { mensaje } = req.body;
 
   if (!estado[user]) estado[user] = 0;
-
   estado[user]++;
 
-  // 🔥 progresión real
+  let respuesta = "";
+
   if (estado[user] === 1) {
-    return res.json({ text: "ya volviste… sabía que no ibas a aguantar" });
+    respuesta = "mmm... hola, pensé que solo ibas a mirar 👀";
+  } else if (estado[user] === 2) {
+    respuesta = "te gusta hablar conmigo, verdad?";
+  } else if (estado[user] === 3) {
+    respuesta = "no me engañas... sé exactamente qué buscas";
+  } else if (estado[user] === 4) {
+    respuesta = "te estás quedando más de lo normal 😏";
+  } else if (estado[user] === 5) {
+    respuesta = "esto ya se está poniendo interesante...";
+  } else {
+    return res.json({
+      text: "esto ya no es gratis 💔"
+    });
   }
 
-  if (estado[user] === 2) {
-    return res.json({ text: "no deberías estar aquí tanto tiempo..." });
-  }
-
-  if (estado[user] === 3) {
-    return res.json({ text: "te estás empezando a enganchar 😏" });
-  }
-
-  if (estado[user] === 4) {
-    return res.json({ text: "yo ya sé qué tipo eres..." });
-  }
-
-  // 🔥 monetización / bloqueo
-  return res.json({ text: "esto ya no es gratis 💔" });
+  res.json({ text: respuesta });
 });
 
 const PORT = process.env.PORT || 3000;
