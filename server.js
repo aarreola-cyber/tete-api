@@ -15,30 +15,26 @@ app.post("/chat", async (req, res) => {
   if (!estados[user]) estados[user] = 0;
   estados[user]++;
 
-  // 🔥 BLOQUEO (monetización)
   if (estados[user] > 6) {
     return res.json({ text: "esto ya no es gratis 💔" });
   }
 
   try {
-    const respuesta = await fetch("https://api.openai.com/v1/chat/completions", {
+    const respuesta = await fetch("https://api.openai.com/v1/responses", {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({
-        model: "gpt-4o-mini",
-        messages: [
+        model: "gpt-5.3",
+        input: [
           {
             role: "system",
             content: `
 Eres Tete.
-Una chica coqueta, segura, ligeramente dominante.
-Nunca eres obvia.
-Siempre haces que el usuario quiera seguir hablando.
+Coqueta, segura, provocadora sutil.
 Respuestas cortas, naturales, con tensión emocional.
-No eres vulgar, pero sí provocadora.
 `
           },
           {
@@ -51,11 +47,18 @@ No eres vulgar, pero sí provocadora.
 
     const data = await respuesta.json();
 
-    const texto = data.choices[0].message.content;
+    console.log(data);
+
+    if (!data.output) {
+      return res.json({ text: "error IA" });
+    }
+
+    const texto = data.output[0].content[0].text;
 
     res.json({ text: texto });
 
   } catch (e) {
+    console.log(e);
     res.json({ text: "mmm... algo se rompió 😔" });
   }
 });
