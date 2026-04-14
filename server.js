@@ -13,13 +13,14 @@ function loadDB() {
   if (!fs.existsSync(DB_FILE)) return {};
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
+
 function saveDB(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
 let db = loadDB();
 
-// 🔥 usuario
+// 🔥 USER
 function getUser(userId) {
   if (!db[userId]) {
     db[userId] = {
@@ -93,63 +94,53 @@ async function llamarIA(messages) {
   return fallback[Math.floor(Math.random() * fallback.length)];
 }
 
-// 🔥 endpoint
+// 🔥 ENDPOINT
 app.post("/chat", async (req, res) => {
-  const { mensaje, userId } = req.body;
+  try {
+    const { mensaje, userId } = req.body;
 
-  if (!userId) return res.json({ text: "error usuario" });
+    if (!userId) return res.json({ text: "error usuario" });
 
-  const user = getUser(userId);
+    const user = getUser(userId);
 
-  user.mensajes++;
-  user.historial.push(mensaje);
-  user.ultimaVez = Date.now();
-  user.historial = user.historial.slice(-12);
+    user.mensajes++;
+    user.historial.push(mensaje);
+    user.ultimaVez = Date.now();
+    user.historial = user.historial.slice(-12);
 
-  const memoria = `
-Perfil:
-${user.perfil}
+    const memoria = `
+Perfil: ${user.perfil}
 
-Hechos:
-${user.hechos.join(" | ")}
+Hechos: ${user.hechos.join(" | ")}
 
-Historial:
-${user.historial.join(" | ")}
+Historial: ${user.historial.join(" | ")}
 
 Cercanía: ${user.apego}
 Energía: ${user.energia}
 
-Estado:
-${user.personalidad} / ${user.emocion}
+Estado: ${user.personalidad} / ${user.emocion}
 
-Historia:
-${user.historia.join(" | ")}
+Historia: ${user.historia.join(" | ")}
 `;
 
-  try {
-    // 🔥 RESPUESTA
-    const texto = await llamarIA([
-      {
-        role: "system",
-        content: `
+    // 🔥 RESPUESTA PRINCIPAL (PROTEGIDA)
+    let texto = "...";
+
+    try {
+      texto = await llamarIA([
+        {
+          role: "system",
+          content: `
 Eres Tete.
 
-No eres fija. Cambias con el tiempo.
+Cambias con el tiempo.
 
 Personalidad: ${user.personalidad}
 Emoción: ${user.emocion}
 
-Actúas como persona real:
-
-- a veces cercana
-- a veces distante
-- a veces provocas
-- a veces ignoras
-
-Reglas:
-- 1–2 líneas
-- no repites
+- hablas corto
 - no explicas
+- no repites
 - dejas tensión
 
 Memoria:
@@ -157,18 +148,25 @@ ${memoria}
 
 Haz que el usuario quiera seguir.
 `
-      },
-      {
-        role: "user",
-        content: mensaje
-      }
-    ]);
+        },
+        {
+          role: "user",
+          content: mensaje
+        }
+      ]);
+    } catch (e) {
+      console.log("ERROR IA PRINCIPAL:", e);
+      texto = "… hoy estás raro";
+    }
 
-    // 🔥 ACTUALIZAR MEMORIA
-    const memText = await llamarIA([
-      {
-        role: "system",
-        content: `
+    // 🔥 MEMORIA (PROTEGIDA)
+    let parsed = {};
+
+    try {
+      const memText = await llamarIA([
+        {
+          role: "system",
+          content: `
 Devuelve SOLO JSON:
 
 {
@@ -181,43 +179,53 @@ Devuelve SOLO JSON:
  "evento": "..."
 }
 `
-      },
-      {
-        role: "user",
-        content: `
+        },
+        {
+          role: "user",
+          content: `
 Usuario: ${mensaje}
 Tete: ${texto}
 `
-      }
-    ]);
+        }
+      ]);
 
-    try {
-      const parsed = JSON.parse(memText);
-
-      user.perfil = parsed.perfil || user.perfil;
-      user.hechos = parsed.hechos || user.hechos;
-      user.apego = parsed.apego ?? user.apego;
-      user.energia = parsed.energia ?? user.energia;
-      user.personalidad = parsed.personalidad || user.personalidad;
-      user.emocion = parsed.emocion || user.emocion;
-
-      if (parsed.evento) {
-        user.historia.push(parsed.evento);
-        user.historia = user.historia.slice(-5);
+      try {
+        parsed = JSON.parse(memText);
+      } catch (e) {
+        console.log("⚠️ JSON INVALIDO MEMORIA:", memText);
       }
 
     } catch (e) {
-      console.log("MEMORIA ERROR:", memText);
+      console.log("ERROR MEMORIA IA:", e);
+    }
+
+    // 🔥 ACTUALIZAR SEGURO
+    user.perfil = parsed.perfil || user.perfil;
+    user.hechos = Array.isArray(parsed.hechos) ? parsed.hechos : user.hechos;
+    user.apego = typeof parsed.apego === "number" ? parsed.apego : user.apego;
+    user.energia = typeof parsed.energia === "number" ? parsed.energia : user.energia;
+    user.personalidad = parsed.personalidad || user.personalidad;
+    user.emocion = parsed.emocion || user.emocion;
+
+    if (parsed.evento) {
+      user.historia.push(parsed.evento);
+      user.historia = user.historia.slice(-5);
     }
 
     saveDB(db);
 
     res.json({ text: texto });
 
-  } catch (e) {
-    console.log(e);
+  } catch (err) {
+    console.log("🔥 ERROR GLOBAL:", err);
     res.json({ text: "… algo cambió" });
   }
 });
 
-app.listen(3000, () => console.log("running"));
+// 🔥 HEALTH CHECK (para Railway)
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("running"));
