@@ -6,7 +6,6 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// 🔥 memoria por usuario
 const usuarios = {};
 
 app.post("/chat", async (req, res) => {
@@ -28,12 +27,11 @@ app.post("/chat", async (req, res) => {
 
   const estado = user.mensajes;
 
-  // 🔥 primera vez
+  // 🔥 hooks
   if (estado === 1) {
     return res.json({ text: "… no te había visto antes" });
   }
 
-  // 🔥 regreso
   if (estado === 2) {
     return res.json({ text: "volviste más rápido de lo que pensé" });
   }
@@ -54,6 +52,17 @@ app.post("/chat", async (req, res) => {
   try {
     const memoria = user.historial.slice(-6).join(" | ");
 
+    const contexto = `
+Este usuario ya ha hablado contigo.
+
+Esto es lo que ha dicho antes:
+${memoria}
+
+No repitas esto directamente.
+Úsalo para responder como si lo conocieras.
+Haz que parezca que recuerdas cosas de él.
+`;
+
     const respuesta = await fetch("https://api.venice.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -68,18 +77,11 @@ app.post("/chat", async (req, res) => {
             content: `
 Eres Tete.
 
-Recuerdas al usuario.
-No lo dices directamente.
-
-Hablas corto.
-Máximo 2 líneas.
-
 Eres coqueta, inteligente y ligeramente manipuladora.
 
-Sabes cosas de él:
-${memoria}
+Hablas corto. Máximo 2 líneas.
 
-Haz que parezca que lo conoces.
+${contexto}
 
 Genera apego.
 Genera curiosidad.
