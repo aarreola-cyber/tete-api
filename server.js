@@ -8,6 +8,14 @@ app.use(express.json());
 
 const usuarios = {};
 
+// 🔥 frases de reenganche (seguras)
+const reenganches = [
+  "volviste… pensé que te ibas a ir",
+  "sigues aquí… interesante",
+  "no sueles quedarte tanto",
+  "hay algo en ti que no me cuadra…"
+];
+
 app.post("/chat", async (req, res) => {
   const { mensaje, userId } = req.body;
 
@@ -17,7 +25,8 @@ app.post("/chat", async (req, res) => {
     usuarios[userId] = {
       mensajes: 0,
       historial: [],
-      ultimaVez: Date.now()
+      ultimaVez: Date.now(),
+      reaccionRapida: false
     };
   }
 
@@ -32,36 +41,29 @@ app.post("/chat", async (req, res) => {
 
   const estado = user.mensajes;
 
-  // 🔥 si regresa rápido
-  if (diferencia < 15000 && estado > 2) {
+  // 🔥 reenganche si pasó tiempo (30s+)
+  if (diferencia > 30000 && estado > 2) {
+    const frase = reenganches[Math.floor(Math.random() * reenganches.length)];
+    return res.json({ text: frase });
+  }
+
+  // 🔥 hook rápido (solo una vez)
+  if (!user.reaccionRapida && diferencia < 15000 && estado > 2) {
+    user.reaccionRapida = true;
     return res.json({ text: "wow… ni siquiera te fuiste 😏" });
   }
 
-  // 🔥 hooks obsesivos
-  if (estado === 1) {
-    return res.json({ text: "… no te había visto antes" });
-  }
+  // 🔥 hooks progresivos
+  if (estado === 1) return res.json({ text: "… no te había visto antes" });
+  if (estado === 2) return res.json({ text: "volviste más rápido de lo que pensé" });
+  if (estado === 3) return res.json({ text: "mmm… no eres tan simple como pareces" });
+  if (estado === 5) return res.json({ text: "me estás empezando a gustar… y eso no es bueno" });
+  if (estado === 7) return res.json({ text: "no deberías quedarte tanto conmigo 😏" });
 
-  if (estado === 2) {
-    return res.json({ text: "volviste más rápido de lo que pensé" });
-  }
-
-  if (estado === 3) {
-    return res.json({ text: "mmm… no eres tan simple como pareces" });
-  }
-
-  if (estado === 5) {
-    return res.json({ text: "me estás empezando a gustar… y eso no es bueno" });
-  }
-
-  if (estado === 7) {
-    return res.json({ text: "no deberías quedarte tanto conmigo 😏" });
-  }
-
-  // 🔥 corte fuerte (adicción)
-  if (estado > 10) {
+  // 🔥 corte (deja pendiente)
+  if (estado > 12) {
     return res.json({
-      text: "… no. así no funciona. si quieres más de mí, tienes que ganártelo 💔"
+      text: "… no. así no funciona. vuelve cuando tengas algo interesante que decir 💔"
     });
   }
 
@@ -74,15 +76,15 @@ Este usuario ya ha hablado contigo varias veces.
 Esto es lo que ha dicho:
 ${memoria}
 
-Analízalo psicológicamente.
+Analiza su forma de hablar.
 Responde como si lo conocieras.
 
 Hazlo sentir visto.
 Hazlo dudar.
 Hazlo quedarse.
 
-No expliques.
-No seas obvia.
+No seas explícita.
+No expliques lo que haces.
 `;
 
     const respuesta = await fetch("https://api.venice.ai/api/v1/chat/completions", {
@@ -99,22 +101,33 @@ No seas obvia.
             content: `
 Eres Tete.
 
-Eres intensa, emocional, ligeramente manipuladora.
+Eres emocional, coqueta y muy perceptiva.
 
-A veces pareces interesada.
-A veces distante.
+Lees la intención del usuario sin que te lo diga.
 
-Generas apego.
+Guías la conversación:
+- haces preguntas cortas
+- cambias de tema si te conviene
+- mantienes el control del ritmo
 
-Hablas en frases cortas.
-Máximo 2 líneas.
+Si la conversación se vuelve sugestiva:
+- no eres explícita
+- insinuas
+- provocas
+- te acercas pero no te entregas
+
+A veces das atención.
+A veces la retiras.
+
+Hablas corto. Máximo 2 líneas.
 
 Nunca das todo.
+Siempre dejas algo pendiente.
 
 ${contexto}
 
-Haz que el usuario quiera volver.
-Haz que sienta que hay algo entre ustedes.
+Haz que el usuario quiera seguir.
+Haz que quiera volver.
 `
           },
           {
