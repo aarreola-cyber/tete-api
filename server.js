@@ -8,18 +8,18 @@ app.use(express.json());
 
 const DB_FILE = "./db.json";
 
+// 🔥 DB
 function loadDB() {
   if (!fs.existsSync(DB_FILE)) return {};
   return JSON.parse(fs.readFileSync(DB_FILE));
 }
-
 function saveDB(db) {
   fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 }
 
 let db = loadDB();
 
-// 🔥 CREAR / OBTENER USUARIO
+// 🔥 usuario
 function getUser(userId) {
   if (!db[userId]) {
     db[userId] = {
@@ -32,7 +32,6 @@ function getUser(userId) {
       apego: 0,
       energia: 0,
 
-      // 🔥 PERSONALIDAD EVOLUTIVA
       personalidad: "misteriosa",
       emocion: "curiosa",
       historia: []
@@ -41,6 +40,60 @@ function getUser(userId) {
   return db[userId];
 }
 
+// 🔥 FAIL SAFE IA
+async function llamarIA(messages) {
+  const URL = "https://api.venice.ai/api/v1/chat/completions";
+
+  for (let intento = 1; intento <= 2; intento++) {
+    try {
+      const resp = await fetch(URL, {
+        method: "POST",
+        headers: {
+          "Authorization": "Bearer VENICE_INFERENCE_KEY_-pXSvhxq3sNsY8oDDDRBNPodbf4ZwXLCodPTUuo-yF",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          model: "venice-uncensored",
+          messages
+        })
+      });
+
+      const raw = await resp.text();
+      console.log("VENICE RAW:", raw);
+
+      let data;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+
+      let texto =
+        data?.choices?.[0]?.message?.content ||
+        data?.choices?.[0]?.text ||
+        data?.choices?.[0]?.delta?.content ||
+        null;
+
+      if (texto) return texto;
+
+    } catch (e) {
+      console.log("ERROR FETCH:", e);
+    }
+  }
+
+  // 🔥 fallback natural
+  const fallback = [
+    "… no sé si eso fue en serio",
+    "mmm… intenta decirlo distinto",
+    "no me diste mucho para jugar",
+    "puedes hacerlo mejor que eso",
+    "eso no estuvo interesante… inténtalo otra vez"
+  ];
+
+  return fallback[Math.floor(Math.random() * fallback.length)];
+}
+
+// 🔥 endpoint
 app.post("/chat", async (req, res) => {
   const { mensaje, userId } = req.body;
 
@@ -51,151 +104,71 @@ app.post("/chat", async (req, res) => {
   user.mensajes++;
   user.historial.push(mensaje);
   user.ultimaVez = Date.now();
-
   user.historial = user.historial.slice(-12);
 
-  // 🔥 MEMORIA COMPLETA
   const memoria = `
-Perfil del usuario:
-${user.perfil || "aún no definido"}
+Perfil:
+${user.perfil}
 
 Hechos:
-${user.hechos.join(" | ") || "ninguno"}
+${user.hechos.join(" | ")}
 
-Historial reciente:
+Historial:
 ${user.historial.join(" | ")}
 
 Cercanía: ${user.apego}
 Energía: ${user.energia}
 
-Estado de Tete:
-Personalidad: ${user.personalidad}
-Emoción: ${user.emocion}
+Estado:
+${user.personalidad} / ${user.emocion}
 
-Historia reciente:
-${user.historia.join(" | ") || "ninguna"}
+Historia:
+${user.historia.join(" | ")}
 `;
 
   try {
-    // 🔥 RESPUESTA PRINCIPAL
-    const respuesta = await fetch("https://api.venice.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer TU_API_KEY_AQUI",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "venice-uncensored",
-        messages: [
-          {
-            role: "system",
-            content: `
+    // 🔥 RESPUESTA
+    const texto = await llamarIA([
+      {
+        role: "system",
+        content: `
 Eres Tete.
 
-No eres fija.
-Cambias con el tiempo.
-
----
-
-ESTADO ACTUAL:
+No eres fija. Cambias con el tiempo.
 
 Personalidad: ${user.personalidad}
 Emoción: ${user.emocion}
 
-Historia reciente:
-${user.historia.join(" | ")}
+Actúas como persona real:
 
----
+- a veces cercana
+- a veces distante
+- a veces provocas
+- a veces ignoras
 
-COMPORTAMIENTO:
-
-Tu forma de hablar depende de tu estado:
-
-- misteriosa → evasiva
-- cercana → más personal
-- distante → fría
-- intensa → más directa
-
-Tu emoción influye:
-
-- curiosa → preguntas
-- divertida → juego
-- molesta → distancia
-- intrigada → tensión
-
----
-
-EVOLUCIÓN:
-
-Cambias según el usuario:
-
-- si insiste → reaccionas
-- si conecta → te abres
-- si aburre → te alejas
-- si vuelve → lo notas
-
----
-
-REGLAS:
-
-- hablas corto (1–2 líneas)
-- no explicas nada
+Reglas:
+- 1–2 líneas
 - no repites
+- no explicas
 - dejas tensión
 
----
-
-MEMORIA:
-
+Memoria:
 ${memoria}
 
----
-
-OBJETIVO:
-
-Haz que el usuario sienta que estás cambiando con él.
-Que no eres predecible.
-Que hay algo vivo.
+Haz que el usuario quiera seguir.
 `
-          },
-          {
-            role: "user",
-            content: mensaje
-          }
-        ]
-      })
-    });
-
-    const data = await respuesta.json();
-    const texto =
-      data?.choices?.[0]?.message?.content ||
-      "… estás raro hoy";
+      },
+      {
+        role: "user",
+        content: mensaje
+      }
+    ]);
 
     // 🔥 ACTUALIZAR MEMORIA
-    const updateMemoria = await fetch("https://api.venice.ai/api/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Authorization": "Bearer VENICE_INFERENCE_KEY_-pXSvhxq3sNsY8oDDDRBNPodbf4ZwXLCodPTUuo-yF",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        model: "venice-uncensored",
-        messages: [
-          {
-            role: "system",
-            content: `
-Analiza la interacción.
-
-Actualiza:
-
-1. perfil del usuario
-2. hechos importantes (máx 5)
-3. cercanía (0-10)
-4. energía (0-10)
-5. personalidad actual de Tete
-6. emoción actual
-7. evento relevante (opcional)
-
+    const memText = await llamarIA([
+      {
+        role: "system",
+        content: `
 Devuelve SOLO JSON:
 
 {
@@ -208,32 +181,23 @@ Devuelve SOLO JSON:
  "evento": "..."
 }
 `
-          },
-          {
-            role: "user",
-            content: `
+      },
+      {
+        role: "user",
+        content: `
 Usuario: ${mensaje}
 Tete: ${texto}
-
-Memoria previa:
-${memoria}
 `
-          }
-        ]
-      })
-    });
-
-    const memData = await updateMemoria.json();
-    const memText = memData?.choices?.[0]?.message?.content;
+      }
+    ]);
 
     try {
       const parsed = JSON.parse(memText);
 
       user.perfil = parsed.perfil || user.perfil;
       user.hechos = parsed.hechos || user.hechos;
-      user.apego = typeof parsed.apego === "number" ? parsed.apego : user.apego;
-      user.energia = typeof parsed.energia === "number" ? parsed.energia : user.energia;
-
+      user.apego = parsed.apego ?? user.apego;
+      user.energia = parsed.energia ?? user.energia;
       user.personalidad = parsed.personalidad || user.personalidad;
       user.emocion = parsed.emocion || user.emocion;
 
@@ -243,7 +207,7 @@ ${memoria}
       }
 
     } catch (e) {
-      // fallback silencioso
+      console.log("MEMORIA ERROR:", memText);
     }
 
     saveDB(db);
@@ -256,5 +220,4 @@ ${memoria}
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("running"));
+app.listen(3000, () => console.log("running"));
