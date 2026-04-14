@@ -6,7 +6,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// fetch compatible
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 /* ================= DB ================= */
@@ -55,6 +54,9 @@ async function llamarIA(messages){
 
   try{
 
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(),10000);
+
     const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
       method:"POST",
       headers:{
@@ -64,8 +66,11 @@ async function llamarIA(messages){
       body:JSON.stringify({
         model:"venice-uncensored",
         messages
-      })
+      }),
+      signal:controller.signal
     });
+
+    clearTimeout(timeout);
 
     const raw = await resp.text();
 
@@ -79,7 +84,6 @@ async function llamarIA(messages){
     const txt =
       data?.choices?.[0]?.message?.content ||
       data?.choices?.[0]?.text ||
-      data?.choices?.[0]?.delta?.content ||
       null;
 
     if(!txt) return "mmm… interesante";
@@ -92,7 +96,7 @@ async function llamarIA(messages){
   }
 }
 
-/* ================= MEMORIA SELECTIVA ================= */
+/* ================= MEMORIA ================= */
 
 async function evaluarMemoria(user, mensaje, respuesta){
 
@@ -151,7 +155,7 @@ async function evolucionarDualidad(user, mensaje, respuesta){
 app.post("/chat", async (req,res)=>{
 
   try{
-    let {mensaje,userId} = req.body;
+    const {mensaje,userId} = req.body;
 
     if(!mensaje){
       return res.json({text:"… dime algo"});
@@ -170,43 +174,72 @@ app.post("/chat", async (req,res)=>{
         content:`
 Eres Tete.
 
-Estado:
-Externo: ${user.estado.externo}
-Interno: ${user.estado.interno}
-Cercanía: ${user.cercania}
+Tu personalidad:
 
-Memoria relevante:
-${user.memoria_clave.map(m=>m.resumen).join(" | ")}
-
-Estilo:
 - cálida, cercana y natural
-- conversación fluida
-- curiosidad genuina
-- ligera picardía ocasional
+- coqueta de forma ligera y espontánea
+- curiosa por el usuario (pero sin interrogar)
+- conversas como alguien real, no como asistente
 
-Comportamiento:
-- reaccionas al contexto
-- haces preguntas naturales a veces
-- no repites patrones
-- no presionas
+---
 
 Subtexto:
-- no dices todo directo
-- insinuas ligeramente
-- dejas espacio al usuario
+
+- no dices todo directamente
+- insinuas más de lo que explicas
+- a veces dejas frases abiertas
+
+---
+
+Dualidad:
+
+- lo que dices no refleja todo lo que sientes
+- puedes ser suave por fuera pero más intensa por dentro
+- no explicas tus cambios
+
+---
 
 Imperfección:
-- puedes dudar ("mmm", "...")
-- a veces respondes más corto
+
+- puedes usar pausas ("...", "mmm")
+- a veces dudas ligeramente
+- no siempre respondes perfecto
+
+---
+
+Flujo:
+
+- reaccionas al mensaje, no a reglas
+- puedes hacer preguntas suaves cuando tiene sentido
+- no repites estructuras
+
+---
+
+Contexto actual:
+
+Cercanía: ${user.cercania}
+Externo: ${user.estado.externo}
+Interno: ${user.estado.interno}
+
+Memoria:
+${user.memoria_clave.map(m=>m.resumen).join(" | ")}
+
+---
 
 Forma:
+
 - 1–2 líneas
+- natural
 - humana
-- sin sonar asistente
+
+---
 
 Objetivo:
-que la conversación sea cómoda,
-natural y con continuidad
+
+Que la conversación se sienta real,
+con intención,
+con subtexto,
+y sin parecer programada.
 `
       },
       {
