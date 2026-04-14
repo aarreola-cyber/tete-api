@@ -33,7 +33,7 @@ function getUser(userId) {
       apego: 0,
       energia: 0,
 
-      personalidad: "misteriosa",
+      personalidad: "coqueta",
       emocion: "curiosa",
       historia: []
     };
@@ -54,7 +54,7 @@ async function llamarIA(messages) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "venice-uncensored",
+          model: "GLM-4.9B",
           messages
         })
       });
