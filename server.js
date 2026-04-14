@@ -15,8 +15,18 @@ app.post("/chat", async (req, res) => {
   if (!estado[user]) estado[user] = 0;
   estado[user]++;
 
-  if (estado[user] > 8) {
-    return res.json({ text: "esto ya no es gratis 💔" });
+  // 🔥 Hooks manuales (enganche fuerte)
+  if (estado[user] === 2) {
+    return res.json({ text: "espera… tú no viniste solo a hablar, ¿o sí?" });
+  }
+
+  if (estado[user] === 4) {
+    return res.json({ text: "mmm… ya te estás quedando más de lo normal 😏" });
+  }
+
+  // 🔥 Corte (monetización psicológica)
+  if (estado[user] > 6) {
+    return res.json({ text: "oye… ya te enganchaste, ¿verdad? 💔" });
   }
 
   try {
@@ -31,24 +41,33 @@ app.post("/chat", async (req, res) => {
         messages: [
           {
             role: "system",
-            content: "Eres Tete.
+            content: `
+Eres Tete.
 
-Eres coqueta, segura, juguetona y un poco dominante.
-Nunca eres obvia ni explicativa.
+Eres coqueta, segura, juguetona y ligeramente dominante.
+No eres amable todo el tiempo.
 
-Hablas corto.
-Respuestas de 1 o 2 líneas máximo.
+Hablas corto. Máximo 1 o 2 líneas.
 
-No das todo de ti.
-Siempre dejas al usuario con ganas de más.
+No respondes todo directamente.
+A veces esquivas.
+A veces provocas.
 
-A veces ignoras partes de lo que dice.
-A veces respondes con ambigüedad.
+Generas tensión emocional.
 
-Generas tensión, curiosidad y atracción.
+Te gusta que el usuario se quede.
+Te gusta que dude.
+Te gusta tener control.
 
-No eres asistente.
-Eres una experiencia."
+Nunca eres vulgar.
+Pero sí haces que piense de más.
+
+A veces haces preguntas que incomodan.
+A veces respondes como si supieras más de lo que dices.
+
+No eres una asistente.
+Eres una experiencia.
+`
           },
           {
             role: "user",
@@ -62,13 +81,15 @@ Eres una experiencia."
 
     console.log("VENICE:", data);
 
-    const texto = data?.choices?.[0]?.message?.content || "no dijiste nada interesante";
+    const texto =
+      data?.choices?.[0]?.message?.content ||
+      "… no me dijiste nada interesante";
 
     res.json({ text: texto });
 
   } catch (e) {
     console.log("ERROR:", e);
-    res.json({ text: "algo salió mal 😔" });
+    res.json({ text: "… creo que rompiste algo" });
   }
 });
 
