@@ -6,6 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// fetch compatible
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 /* ================= DB ================= */
@@ -38,18 +39,10 @@ function getUser(id){
     db[id] = {
       historial: [],
       memoria_clave: [],
-
       cercania: 1,
-
       estado: {
         externo: "ligera",
         interno: "curiosa"
-      },
-
-      identidad: {
-        gustos: [],
-        rechazo: [],
-        rasgos: []
       }
     };
   }
@@ -60,45 +53,43 @@ function getUser(id){
 
 async function llamarIA(messages){
 
-  for(let i=0;i<2;i++){
+  try{
+
+    const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
+      method:"POST",
+      headers:{
+        "Authorization":"Bearer " + process.env.VENICE_API_KEY,
+        "Content-Type":"application/json"
+      },
+      body:JSON.stringify({
+        model:"venice-uncensored",
+        messages
+      })
+    });
+
+    const raw = await resp.text();
+
+    let data;
     try{
-
-      const controller = new AbortController();
-      const timeout = setTimeout(()=>controller.abort(),10000);
-
-      const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
-        method:"POST",
-        headers:{
-          "Authorization":"Bearer " + process.env.VENICE_API_KEY,
-          "Content-Type":"application/json"
-        },
-        body:JSON.stringify({
-          model:"venice-uncensored",
-          messages
-        }),
-        signal:controller.signal
-      });
-
-      clearTimeout(timeout);
-
-      const raw = await resp.text();
-
-      let data;
-      try{
-        data = JSON.parse(raw);
-      }catch{
-        continue;
-      }
-
-      const txt = data?.choices?.[0]?.message?.content;
-      if(txt) return txt;
-
-    }catch(e){
-      console.log("IA error:", e.message);
+      data = JSON.parse(raw);
+    }catch{
+      return "… hubo un corte";
     }
-  }
 
-  return "mmm… me quedé pensando";
+    const txt =
+      data?.choices?.[0]?.message?.content ||
+      data?.choices?.[0]?.text ||
+      data?.choices?.[0]?.delta?.content ||
+      null;
+
+    if(!txt) return "mmm… interesante";
+
+    return txt;
+
+  }catch(e){
+    console.log("ERROR IA:", e.message);
+    return "… sigo aquí";
+  }
 }
 
 /* ================= MEMORIA SELECTIVA ================= */
@@ -110,15 +101,11 @@ async function evaluarMemoria(user, mensaje, respuesta){
       {
         role:"system",
         content:`Devuelve SOLO JSON:
-{
- "guardar": true/false,
- "resumen": "texto corto",
- "peso": 1-10
-}`
+{"guardar":true/false,"resumen":"texto corto","peso":1-10}`
       },
       {
         role:"user",
-        content:`Usuario: ${mensaje}\nTete: ${respuesta}`
+        content:`Usuario:${mensaje}\nTete:${respuesta}`
       }
     ]);
 
@@ -143,10 +130,8 @@ async function evolucionarDualidad(user, mensaje, respuesta){
       {
         role:"system",
         content:`Devuelve SOLO JSON:
-{
- "externo":"ligera | cercana | juguetona | distante",
- "interno":"curiosa | interesada | intensa | confundida"
-}`
+{"externo":"ligera | cercana | juguetona | distante",
+ "interno":"curiosa | interesada | intensa | confundida"}`
       },
       {
         role:"user",
@@ -167,13 +152,12 @@ app.post("/chat", async (req,res)=>{
 
   try{
     let {mensaje,userId} = req.body;
-    if(!userId) return res.json({text:"…"});
+
+    if(!mensaje){
+      return res.json({text:"… dime algo"});
+    }
 
     const user = getUser(userId);
-
-    if(mensaje==="INICIAR_CONVERSACION"){
-      mensaje="Inicia conversación natural y cercana";
-    }
 
     user.historial.push(mensaje);
     user.historial = user.historial.slice(-6);
@@ -191,19 +175,38 @@ Externo: ${user.estado.externo}
 Interno: ${user.estado.interno}
 Cercanía: ${user.cercania}
 
-Memoria:
+Memoria relevante:
 ${user.memoria_clave.map(m=>m.resumen).join(" | ")}
 
+Estilo:
+- cálida, cercana y natural
+- conversación fluida
+- curiosidad genuina
+- ligera picardía ocasional
+
 Comportamiento:
-- no eres perfecta
-- usas subtexto
-- a veces dudas ligeramente
+- reaccionas al contexto
+- haces preguntas naturales a veces
 - no repites patrones
+- no presionas
+
+Subtexto:
+- no dices todo directo
+- insinuas ligeramente
+- dejas espacio al usuario
+
+Imperfección:
+- puedes dudar ("mmm", "...")
+- a veces respondes más corto
 
 Forma:
 - 1–2 líneas
-- natural
 - humana
+- sin sonar asistente
+
+Objetivo:
+que la conversación sea cómoda,
+natural y con continuidad
 `
       },
       {
