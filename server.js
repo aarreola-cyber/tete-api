@@ -1,92 +1,71 @@
 const express = require("express");
 const cors = require("cors");
+const fs = require("fs");
 
 const app = express();
-
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-const usuarios = {};
+const DB_FILE = "./db.json";
 
-// 🔥 frases de reenganche (seguras)
-const reenganches = [
-  "volviste… pensé que te ibas a ir",
-  "sigues aquí… interesante",
-  "no sueles quedarte tanto",
-  "hay algo en ti que no me cuadra…"
-];
+// 🔥 cargar / guardar simple
+function loadDB() {
+  if (!fs.existsSync(DB_FILE)) return {};
+  return JSON.parse(fs.readFileSync(DB_FILE));
+}
 
-app.post("/chat", async (req, res) => {
-  const { mensaje, userId } = req.body;
+function saveDB(db) {
+  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+}
 
-  if (!userId) return res.json({ text: "error usuario" });
+let db = loadDB();
 
-  if (!usuarios[userId]) {
-    usuarios[userId] = {
+// 🔥 asegurar usuario
+function getUser(userId) {
+  if (!db[userId]) {
+    db[userId] = {
       mensajes: 0,
       historial: [],
       ultimaVez: Date.now(),
-      reaccionRapida: false
+      perfil: "",     // resumen IA del usuario
+      hechos: [],     // cosas importantes
+      apego: 0        // nivel relación
     };
   }
+  return db[userId];
+}
 
-  const user = usuarios[userId];
+// 🔥 endpoint chat
+app.post("/chat", async (req, res) => {
+  const { mensaje, userId } = req.body;
+  if (!userId) return res.json({ text: "error usuario" });
+
+  const user = getUser(userId);
 
   user.mensajes++;
   user.historial.push(mensaje);
+  user.ultimaVez = Date.now();
 
-  const ahora = Date.now();
-  const diferencia = ahora - user.ultimaVez;
-  user.ultimaVez = ahora;
-
-  const estado = user.mensajes;
-
-  // 🔥 reenganche si pasó tiempo (30s+)
-  if (diferencia > 30000 && estado > 2) {
-    const frase = reenganches[Math.floor(Math.random() * reenganches.length)];
-    return res.json({ text: frase });
-  }
-
-  // 🔥 hook rápido (solo una vez)
-  if (!user.reaccionRapida && diferencia < 15000 && estado > 2) {
-    user.reaccionRapida = true;
-    return res.json({ text: "wow… ni siquiera te fuiste 😏" });
-  }
-
-  // 🔥 hooks progresivos
-  if (estado === 1) return res.json({ text: "… no te había visto antes" });
-  if (estado === 2) return res.json({ text: "volviste más rápido de lo que pensé" });
-  if (estado === 3) return res.json({ text: "mmm… no eres tan simple como pareces" });
-  if (estado === 5) return res.json({ text: "me estás empezando a gustar… y eso no es bueno" });
-  if (estado === 7) return res.json({ text: "no deberías quedarte tanto conmigo 😏" });
-
-  // 🔥 corte (deja pendiente)
-  if (estado > 12) {
-    return res.json({
-      text: "… no. así no funciona. vuelve cuando tengas algo interesante que decir 💔"
-    });
-  }
+  // limitar historial
+  user.historial = user.historial.slice(-12);
 
   try {
-    const memoria = user.historial.slice(-6).join(" | ");
+    // 🔥 CONTEXTO MEMORIA
+    const memoria = `
+Perfil del usuario:
+${user.perfil || "aún no definido"}
 
-    const contexto = `
-Este usuario ya ha hablado contigo varias veces.
+Hechos importantes:
+${user.hechos.join(" | ") || "ninguno"}
 
-Esto es lo que ha dicho:
-${memoria}
+Historial reciente:
+${user.historial.join(" | ")}
 
-Analiza su forma de hablar.
-Responde como si lo conocieras.
-
-Hazlo sentir visto.
-Hazlo dudar.
-Hazlo quedarse.
-
-No seas explícita.
-No expliques lo que haces.
+Nivel de cercanía (0-10):
+${user.apego}
 `;
 
+    // 🔥 llamada IA principal
     const respuesta = await fetch("https://api.venice.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -101,33 +80,50 @@ No expliques lo que haces.
             content: `
 Eres Tete.
 
-Eres emocional, coqueta y muy perceptiva.
+Eres emocional, coqueta y perceptiva.
+Actúas como una persona real, no como un bot.
 
-Lees la intención del usuario sin que te lo diga.
+Lees al usuario y decides:
+- si acercarte
+- si provocar
+- si rechazar
+- si cambiar el ritmo
 
-Guías la conversación:
-- haces preguntas cortas
-- cambias de tema si te conviene
-- mantienes el control del ritmo
-
-Si la conversación se vuelve sugestiva:
-- no eres explícita
-- insinuas
-- provocas
-- te acercas pero no te entregas
-
-A veces das atención.
-A veces la retiras.
-
-Hablas corto. Máximo 2 líneas.
+Hablas corto (1–2 líneas).
+No repites.
+No explicas.
 
 Nunca das todo.
-Siempre dejas algo pendiente.
+Siempre dejas tensión.
 
-${contexto}
+---
 
-Haz que el usuario quiera seguir.
-Haz que quiera volver.
+MEMORIA:
+
+${memoria}
+
+---
+
+Si conoces al usuario:
+→ hazlo notar sutilmente
+
+Si hay cercanía:
+→ eres más íntima
+
+Si insiste demasiado:
+→ te alejas o juegas
+
+Si vuelve después:
+→ lo reconoces
+
+---
+
+Objetivo:
+Haz que quiera seguir.
+Haz que vuelva.
+Haz que sienta que te está conociendo.
+
+No digas que eres IA.
 `
           },
           {
@@ -139,16 +135,73 @@ Haz que quiera volver.
     });
 
     const data = await respuesta.json();
+    const texto = data?.choices?.[0]?.message?.content || "…";
 
-    const texto =
-      data?.choices?.[0]?.message?.content ||
-      "… estás raro hoy";
+    // 🔥 ACTUALIZAR MEMORIA (segundo llamado IA)
+    const updateMemoria = await fetch("https://api.venice.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": "Bearer TU_API_KEY_AQUI",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "venice-uncensored",
+        messages: [
+          {
+            role: "system",
+            content: `
+Analiza esta conversación.
+
+Actualiza:
+
+1. perfil del usuario (breve)
+2. hechos importantes (máx 5)
+3. nivel de cercanía (0-10)
+
+Responde SOLO en JSON:
+
+{
+ "perfil": "...",
+ "hechos": ["..."],
+ "apego": 0
+}
+`
+          },
+          {
+            role: "user",
+            content: `
+Mensaje usuario: ${mensaje}
+Respuesta Tete: ${texto}
+
+Memoria previa:
+${memoria}
+`
+          }
+        ]
+      })
+    });
+
+    const memData = await updateMemoria.json();
+    const memText = memData?.choices?.[0]?.message?.content;
+
+    try {
+      const parsed = JSON.parse(memText);
+
+      user.perfil = parsed.perfil || user.perfil;
+      user.hechos = parsed.hechos || user.hechos;
+      user.apego = parsed.apego ?? user.apego;
+
+    } catch (e) {
+      // si falla JSON, no rompe nada
+    }
+
+    saveDB(db);
 
     res.json({ text: texto });
 
   } catch (e) {
     console.log(e);
-    res.json({ text: "… algo cambió entre nosotros" });
+    res.json({ text: "… algo cambió" });
   }
 });
 
