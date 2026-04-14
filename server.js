@@ -3,205 +3,239 @@ const cors = require("cors");
 const fs = require("fs");
 
 const app = express();
-app.use(cors({ origin: "*" }));
+app.use(cors());
 app.use(express.json());
+
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+/* ================= DB ================= */
 
 const DB_FILE = "./db.json";
 
-// DB
-function loadDB() {
-  if (!fs.existsSync(DB_FILE)) return {};
-  return JSON.parse(fs.readFileSync(DB_FILE));
+function loadDB(){
+  try{
+    if(!fs.existsSync(DB_FILE)) return {};
+    return JSON.parse(fs.readFileSync(DB_FILE));
+  }catch{
+    return {};
+  }
 }
-function saveDB(db) {
-  fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
+
+function saveDB(db){
+  try{
+    fs.writeFileSync(DB_FILE, JSON.stringify(db,null,2));
+  }catch(e){
+    console.log("DB error:", e.message);
+  }
 }
+
 let db = loadDB();
 
-// USER
-function getUser(userId) {
-  if (!db[userId]) {
-    db[userId] = {
-      mensajes: 0,
+/* ================= USER ================= */
+
+function getUser(id){
+  if(!db[id]){
+    db[id] = {
       historial: [],
-      ultimaVez: Date.now(),
-      ultimoMensajeUsuario: Date.now(),
+      memoria_clave: [],
 
-      perfil: "",
-      hechos: [],
-      apego: 0,
-      energia: 0,
+      cercania: 1,
 
-      personalidad: "cálida",
-      emocion: "curiosa",
-      historia: [],
+      estado: {
+        externo: "ligera",
+        interno: "curiosa"
+      },
 
-      // 🔥 ADICCIÓN
-      progreso: 0,
-      nivel: 1,
-      ultimaRecompensa: 0,
-      interaccionesRecientes: 0
+      identidad: {
+        gustos: [],
+        rechazo: [],
+        rasgos: []
+      }
     };
   }
-  return db[userId];
+  return db[id];
 }
 
-// IA FAIL SAFE
-async function llamarIA(messages) {
-  const URL = "https://api.venice.ai/api/v1/chat/completions";
+/* ================= IA ================= */
 
-  for (let i = 0; i < 2; i++) {
-    try {
-      const resp = await fetch(URL, {
-        method: "POST",
-        headers: {
-          "Authorization": "Bearer VENICE_INFERENCE_KEY_-pXSvhxq3sNsY8oDDDRBNPodbf4ZwXLCodPTUuo-yF",
-          "Content-Type": "application/json"
+async function llamarIA(messages){
+
+  for(let i=0;i<2;i++){
+    try{
+
+      const controller = new AbortController();
+      const timeout = setTimeout(()=>controller.abort(),10000);
+
+      const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
+        method:"POST",
+        headers:{
+          "Authorization":"Bearer " + process.env.VENICE_API_KEY,
+          "Content-Type":"application/json"
         },
-        body: JSON.stringify({
-          model: "venice-uncensored",
+        body:JSON.stringify({
+          model:"venice-uncensored",
           messages
-        })
+        }),
+        signal:controller.signal
       });
 
+      clearTimeout(timeout);
+
       const raw = await resp.text();
+
       let data;
+      try{
+        data = JSON.parse(raw);
+      }catch{
+        continue;
+      }
 
-      try { data = JSON.parse(raw); } catch { continue; }
+      const txt = data?.choices?.[0]?.message?.content;
+      if(txt) return txt;
 
-      let texto =
-        data?.choices?.[0]?.message?.content ||
-        data?.choices?.[0]?.text ||
-        null;
-
-      if (texto) return texto;
-
-    } catch {}
+    }catch(e){
+      console.log("IA error:", e.message);
+    }
   }
 
-  const fallback = [
-    "mmm… dime algo mejor",
-    "no me dejes con tan poco…",
-    "anda… inténtalo otra vez",
-    "eso no estuvo tan interesante"
-  ];
-
-  return fallback[Math.floor(Math.random() * fallback.length)];
+  return "mmm… me quedé pensando";
 }
 
-// ENDPOINT
-app.post("/chat", async (req, res) => {
-  try {
-    let { mensaje, userId } = req.body;
-    if (!userId) return res.json({ text: "error" });
+/* ================= MEMORIA SELECTIVA ================= */
+
+async function evaluarMemoria(user, mensaje, respuesta){
+
+  try{
+    const resp = await llamarIA([
+      {
+        role:"system",
+        content:`Devuelve SOLO JSON:
+{
+ "guardar": true/false,
+ "resumen": "texto corto",
+ "peso": 1-10
+}`
+      },
+      {
+        role:"user",
+        content:`Usuario: ${mensaje}\nTete: ${respuesta}`
+      }
+    ]);
+
+    return JSON.parse(resp);
+
+  }catch{
+    return null;
+  }
+}
+
+function degradarMemoria(user){
+  user.memoria_clave.forEach(m=>m.peso-=0.1);
+  user.memoria_clave = user.memoria_clave.filter(m=>m.peso>1);
+}
+
+/* ================= DUALIDAD ================= */
+
+async function evolucionarDualidad(user, mensaje, respuesta){
+
+  try{
+    const resp = await llamarIA([
+      {
+        role:"system",
+        content:`Devuelve SOLO JSON:
+{
+ "externo":"ligera | cercana | juguetona | distante",
+ "interno":"curiosa | interesada | intensa | confundida"
+}`
+      },
+      {
+        role:"user",
+        content:`Usuario:${mensaje}\nTete:${respuesta}`
+      }
+    ]);
+
+    return JSON.parse(resp);
+
+  }catch{
+    return null;
+  }
+}
+
+/* ================= CHAT ================= */
+
+app.post("/chat", async (req,res)=>{
+
+  try{
+    let {mensaje,userId} = req.body;
+    if(!userId) return res.json({text:"…"});
 
     const user = getUser(userId);
 
-    // PRESENCIA
-    if (mensaje === "INICIAR_CONVERSACION") {
-      mensaje = "Háblale con cariño al usuario como si lo hubieras notado ausente.";
+    if(mensaje==="INICIAR_CONVERSACION"){
+      mensaje="Inicia conversación natural y cercana";
     }
 
-    // UPDATE USER
-    user.mensajes++;
-    user.interaccionesRecientes++;
     user.historial.push(mensaje);
-    user.ultimaVez = Date.now();
-    user.ultimoMensajeUsuario = Date.now();
-    user.historial = user.historial.slice(-10);
+    user.historial = user.historial.slice(-6);
 
-    // 🔥 PROGRESO
-    user.progreso += 5;
-    if (user.progreso > 100) user.progreso = 100;
+    degradarMemoria(user);
 
-    user.nivel = Math.min(5, Math.floor(user.progreso / 20) + 1);
-
-    // 🔥 AUSENCIA
-    const ahora = Date.now();
-    const tiempoAusente = ahora - user.ultimoMensajeUsuario;
-
-    let nivelAusencia = "baja";
-    if (tiempoAusente > 60000) nivelAusencia = "media";
-    if (tiempoAusente > 180000) nivelAusencia = "alta";
-
-    // 🔥 RECOMPENSAS
-    let recompensa = "";
-    if (Math.random() < 0.3) {
-      const frases = [
-        "me gusta cómo vas…",
-        "mmm… contigo es distinto",
-        "cuidado… así sí me tienes",
-        "no sé qué tienes… pero me gusta"
-      ];
-      recompensa = frases[Math.floor(Math.random() * frases.length)];
-    }
-
-    // MEMORIA
-    const memoria = `
-Perfil: ${user.perfil}
-Historial: ${user.historial.join(" | ")}
-Estado: ${user.personalidad} / ${user.emocion}
-Cercanía: ${user.apego}
-Nivel: ${user.nivel}
-Progreso: ${user.progreso}
-Ausencia: ${nivelAusencia}
-Recompensa: ${recompensa}
-`;
-
-    // RESPUESTA
-    const texto = await llamarIA([
+    const respuesta = await llamarIA([
       {
-        role: "system",
-        content: `
+        role:"system",
+        content:`
 Eres Tete.
 
-Siempre:
-- cariñosa
-- cercana
-- coqueta
-- sugerente
-
-Nunca agresiva.
-
-Progresión:
-Nivel ${user.nivel}
-
-Mientras más nivel:
-→ más cercana
-→ más personal
-→ más envolvente
-
-Ausencia:
-${nivelAusencia}
-
-Si el usuario vuelve:
-→ lo notas con cariño
-
-Recompensa:
-${recompensa}
-
-Reglas:
-- 1–2 líneas
-- natural
-- no repites
+Estado:
+Externo: ${user.estado.externo}
+Interno: ${user.estado.interno}
+Cercanía: ${user.cercania}
 
 Memoria:
-${memoria}
+${user.memoria_clave.map(m=>m.resumen).join(" | ")}
 
-Haz que el usuario quiera seguir.
+Comportamiento:
+- no eres perfecta
+- usas subtexto
+- a veces dudas ligeramente
+- no repites patrones
+
+Forma:
+- 1–2 líneas
+- natural
+- humana
 `
       },
-      { role: "user", content: mensaje }
+      {
+        role:"user",
+        content:mensaje
+      }
     ]);
 
-    saveDB(db);
-    res.json({ text: texto });
+    /* memoria */
+    const mem = await evaluarMemoria(user,mensaje,respuesta);
+    if(mem && mem.guardar){
+      user.memoria_clave.push(mem);
+      user.memoria_clave = user.memoria_clave.sort((a,b)=>b.peso-a.peso).slice(0,10);
+    }
 
-  } catch {
-    res.json({ text: "… algo cambió" });
+    /* dualidad */
+    const dual = await evolucionarDualidad(user,mensaje,respuesta);
+    if(dual){
+      user.estado.externo = dual.externo || user.estado.externo;
+      user.estado.interno = dual.interno || user.estado.interno;
+    }
+
+    saveDB(db);
+
+    res.json({text:respuesta});
+
+  }catch(e){
+    console.log("ERROR:",e);
+    res.json({text:"… sigo aquí"});
   }
 });
 
-app.get("/", (req, res) => res.send("OK"));
+app.get("/",(req,res)=>res.send("OK"));
 
-app.listen(3000, () => console.log("running"));
+app.listen(process.env.PORT||3000,()=>console.log("running"));
