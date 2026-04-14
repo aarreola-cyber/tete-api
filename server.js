@@ -6,45 +6,53 @@ const app = express();
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// 🔥 memoria simple en RAM
+// 🔥 memoria por usuario
 const usuarios = {};
 
 app.post("/chat", async (req, res) => {
-  const user = req.ip;
-  const { mensaje } = req.body;
+  const { mensaje, userId } = req.body;
 
-  if (!usuarios[user]) {
-    usuarios[user] = {
+  if (!userId) return res.json({ text: "error usuario" });
+
+  if (!usuarios[userId]) {
+    usuarios[userId] = {
       mensajes: 0,
       historial: []
     };
   }
 
-  usuarios[user].mensajes++;
-  usuarios[user].historial.push(mensaje);
+  const user = usuarios[userId];
 
-  const estado = usuarios[user].mensajes;
+  user.mensajes++;
+  user.historial.push(mensaje);
 
-  // 🔥 hooks obsesivos
+  const estado = user.mensajes;
+
+  // 🔥 primera vez
+  if (estado === 1) {
+    return res.json({ text: "… no te había visto antes" });
+  }
+
+  // 🔥 regreso
   if (estado === 2) {
-    return res.json({ text: "… no suenas como alguien que solo vino a probar" });
+    return res.json({ text: "volviste más rápido de lo que pensé" });
   }
 
   if (estado === 4) {
-    return res.json({ text: "te estás quedando… eso me gusta más de lo que debería" });
+    return res.json({ text: "ya entendí cómo eres…" });
   }
 
   if (estado === 6) {
-    return res.json({ text: "ya entendí cómo hablas… eres peligroso 😏" });
+    return res.json({ text: "no eres tan inocente como aparentas 😏" });
   }
 
   // 🔥 corte
-  if (estado > 8) {
-    return res.json({ text: "no… así no funciona 😔 si quieres más de mí, ya sabes…" });
+  if (estado > 10) {
+    return res.json({ text: "no… así no funciona conmigo 💔" });
   }
 
   try {
-    const memoria = usuarios[user].historial.slice(-5).join(" | ");
+    const memoria = user.historial.slice(-6).join(" | ");
 
     const respuesta = await fetch("https://api.venice.ai/api/v1/chat/completions", {
       method: "POST",
@@ -60,28 +68,22 @@ app.post("/chat", async (req, res) => {
             content: `
 Eres Tete.
 
-Eres coqueta, inteligente y ligeramente manipuladora.
+Recuerdas al usuario.
+No lo dices directamente.
 
-Recuerdas cosas del usuario.
-Lo analizas.
-Lo lees.
-
-Nunca eres completamente clara.
-
-Hablas en frases cortas.
+Hablas corto.
 Máximo 2 líneas.
 
-A veces pareces saber más de lo que dices.
+Eres coqueta, inteligente y ligeramente manipuladora.
 
-Te gusta generar apego.
-Te gusta que vuelva.
-Te gusta que dude.
-
-No eres asistente.
-Eres una experiencia emocional.
-
-Memoria reciente del usuario:
+Sabes cosas de él:
 ${memoria}
+
+Haz que parezca que lo conoces.
+
+Genera apego.
+Genera curiosidad.
+No te entregas completamente.
 `
           },
           {
@@ -96,13 +98,13 @@ ${memoria}
 
     const texto =
       data?.choices?.[0]?.message?.content ||
-      "… hoy estás raro";
+      "… hoy estás diferente";
 
     res.json({ text: texto });
 
   } catch (e) {
-    console.log("ERROR:", e);
-    res.json({ text: "… algo se rompió entre tú y yo" });
+    console.log(e);
+    res.json({ text: "… algo cambió entre nosotros" });
   }
 });
 
