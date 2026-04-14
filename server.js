@@ -54,7 +54,7 @@ async function llamarIA(messages) {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "GLM-4.9B",
+          model: "venice-uncensored",
           messages
         })
       });
