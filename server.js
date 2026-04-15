@@ -38,31 +38,31 @@ async function saveUser(id,user){
 async function llamarIA(messages){
   try{
     const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
-      method: "POST",
-      headers: {
-        "Authorization": `Bearer ${process.env.VENICE_API_KEY}`,
-        "Content-Type": "application/json"
+      method:"POST",
+      headers:{
+        "Authorization":"Bearer " + process.env.VENICE_API_KEY,
+        "Content-Type":"application/json"
       },
-      body: JSON.stringify({
-        model: "venice-uncensored",
-        messages: [
-          {
-            role: "user",
-            content: messages.map(m=>m.content).join("\n")
-          }
-        ]
+      body:JSON.stringify({
+        model:"venice-uncensored",
+        messages:[{role:"user",content:messages.map(m=>m.content).join("\n")}]
       })
     });
 
-    const data = await resp.json();
+    const raw = await resp.text();
+    console.log("STATUS:", resp.status);
+    console.log("RAW:", raw);
 
-    console.log("VENICE DATA:", data);
+    if(!resp.ok){
+      return "error " + resp.status;
+    }
 
-    return data?.choices?.[0]?.message?.content || "… sigo aquí";
+    const data = JSON.parse(raw);
+    return data?.choices?.[0]?.message?.content || "sin respuesta";
 
   }catch(e){
-    console.log("ERROR VENICE:", e);
-    return "… sigo aquí";
+    console.log("CATCH:", e.message);
+    return "catch error";
   }
 }
 /* ================= CHAT ================= */
