@@ -1,41 +1,73 @@
 const express = require("express");
 const cors = require("cors");
-const Redis = require("ioredis");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const redis = new Redis(process.env.REDIS_URL);
-
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
+/* ================= REDIS (opcional) ================= */
+
+let redis = null;
+
+try{
+  const Redis = require("ioredis");
+  redis = new Redis(process.env.REDIS_URL);
+
+  redis.on("error", (e)=>{
+    console.log("Redis error, usando modo sin memoria");
+    redis = null;
+  });
+
+}catch(e){
+  console.log("Redis no disponible");
+}
 
 /* ================= USER ================= */
 
 async function getUser(id){
-  const data = await redis.get("user:"+id);
-  if(data) return JSON.parse(data);
+
+  if(!redis){
+    return {
+      historial: [],
+      cercania: 1,
+      identidad:{nombre:null}
+    };
+  }
+
+  try{
+    const data = await redis.get("user:"+id);
+    if(data) return JSON.parse(data);
+  }catch(e){
+    redis = null;
+  }
 
   const nuevo = {
     historial: [],
-    memoria_clave: [],
     cercania: 1,
-    estado:{externo:"ligera",interno:"curiosa"},
-    identidad:{nombre:null},
-    lastSeen: Date.now()
+    identidad:{nombre:null}
   };
 
-  await redis.set("user:"+id, JSON.stringify(nuevo));
+  if(redis){
+    await redis.set("user:"+id, JSON.stringify(nuevo));
+  }
+
   return nuevo;
 }
 
 async function saveUser(id,user){
-  await redis.set("user:"+id, JSON.stringify(user));
+  if(!redis) return;
+  try{
+    await redis.set("user:"+id, JSON.stringify(user));
+  }catch(e){
+    redis = null;
+  }
 }
 
 /* ================= IA ================= */
 
-async function llamarIA(messages){
+async function llamarIA(mensaje){
   try{
     const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
       method:"POST",
@@ -45,26 +77,32 @@ async function llamarIA(messages){
       },
       body:JSON.stringify({
         model:"venice-uncensored",
-        messages:[{role:"user",content:messages.map(m=>m.content).join("\n")}]
+        messages:[
+          { role:"user", content: mensaje }
+        ],
+        temperature:0.9,
+        max_tokens:80
       })
     });
 
     const raw = await resp.text();
-    console.log("STATUS:", resp.status);
-    console.log("RAW:", raw);
+    console.log("VENICE:", raw);
 
-    if(!resp.ok){
-      return "error " + resp.status;
+    let data;
+    try{
+      data = JSON.parse(raw);
+    }catch{
+      return "…";
     }
 
-    const data = JSON.parse(raw);
-    return data?.choices?.[0]?.message?.content || "sin respuesta";
+    return data?.choices?.[0]?.message?.content || "…";
 
   }catch(e){
-    console.log("CATCH:", e.message);
-    return "catch error";
+    console.log("ERROR IA:", e.message);
+    return "…";
   }
 }
+
 /* ================= CHAT ================= */
 
 app.post("/chat", async (req,res)=>{
@@ -74,10 +112,8 @@ app.post("/chat", async (req,res)=>{
 
     const user = await getUser(userId);
 
-    user.lastSeen = Date.now();
-
     user.historial.push(mensaje);
-    user.historial = user.historial.slice(-6);
+    user.historial = user.historial.slice(-5);
 
     if(!user.identidad.nombre){
       const m = mensaje.match(/me llamo (\w+)/i);
@@ -88,36 +124,22 @@ app.post("/chat", async (req,res)=>{
       user.cercania += 0.2;
     }
 
-    const respuesta = await llamarIA([
-      {
-        role:"system",
-        content:`
-Eres Tete.
-
-Cercanía: ${user.cercania}
-Estado: ${user.estado.externo}
-
-Usuario: ${user.identidad.nombre || "..."}
-
-Hablas natural, corto, con intención.
-No explicas.
-Generas cercanía ligera.
-`
-      },
-      {
-        role:"user",
-        content:mensaje
-      }
-    ]);
+    const respuesta = await llamarIA(mensaje);
 
     await saveUser(userId,user);
 
     res.json({text:respuesta});
 
   }catch(e){
-    console.log("ERROR:",e);
-    res.json({text:"… sigo aquí"});
+    console.log("ERROR:", e);
+    res.json({text:"…"});
   }
 });
+
+/* ================= ROOT ================= */
+
+app.get("/",(req,res)=>res.send("Tete API OK"));
+
+/* ================= START ================= */
 
 app.listen(process.env.PORT||3000,()=>console.log("running"));
