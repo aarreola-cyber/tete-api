@@ -37,7 +37,7 @@ async function saveUser(id,user){
 
 async function llamarIA(messages){
   try{
-    const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
+    const resp = await fetch("https://api.venice.ai/api/v1/completions",{
       method:"POST",
       headers:{
         "Authorization":"Bearer " + process.env.VENICE_API_KEY,
@@ -45,7 +45,7 @@ async function llamarIA(messages){
       },
       body:JSON.stringify({
         model:"venice-uncensored",
-        messages,
+        prompt: messages.map(m=>m.content).join("\n"),
         temperature:0.9,
         max_tokens:80
       })
@@ -53,7 +53,7 @@ async function llamarIA(messages){
 
     const data = await resp.json();
 
-    return data?.choices?.[0]?.message?.content || "… sigo aquí";
+    return data?.choices?.[0]?.text || "… sigo aquí";
 
   }catch(e){
     console.log("ERROR IA:",e.message);
