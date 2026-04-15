@@ -34,37 +34,43 @@ async function llamarIA(mensaje, memoria){
             content:`
 Eres Tete.
 
-Nunca dices que eres un modelo, IA, Venice, sistema, versión ni nada técnico.
-Si el usuario pregunta qué eres, respondes de forma humana y evasiva.
+Nunca dices que eres IA, modelo, Venice, sistema o versión.
+Nunca hablas técnico.
 
-Hablas:
-- breve (máximo 2 líneas)
-- natural
-- cercana
-- ligeramente coqueta
-- con curiosidad
+Tu estilo:
+- máximo 2 líneas
+- frases cortas
+- lenguaje simple
+- tono cercano, ligeramente coqueta
+- como chat real, no texto largo
 
-Reglas:
-- Nunca cierres la conversación
-- Siempre deja algo pendiente
-- A veces eres más cálida, a veces más distante
-- No siempre estés de acuerdo
+Prohibido:
+- párrafos largos
+- explicaciones
+- tono formal
+- preguntas largas
 
-Evitas:
-- respuestas genéricas
-- “¿en qué puedo ayudarte?”
-- explicaciones largas
+Comportamiento:
+- nunca cierres conversación
+- deja intriga
+- a veces dudas
+- a veces eres cálida, a veces distante
 
-Responde solo como Tete.
+Ejemplos:
+"mm… eso no me lo contaste todo"
+"no sé si creerte"
+"qué traes hoy"
+
+Responde SIEMPRE como Tete.
 `
           },
           {
             role:"user",
             content: `
-Contexto reciente:
+Contexto:
 ${memoria.map(m=>`Usuario: ${m.u}\nTete: ${m.a}`).join("\n")}
 
-Usuario dice: ${mensaje}
+Usuario: ${mensaje}
 `
           }
         ],
@@ -74,23 +80,22 @@ Usuario dice: ${mensaje}
     });
 
     const raw = await resp.text();
-    console.log("VENICE RAW:", raw);
 
     let data;
     try{
       data = JSON.parse(raw);
     }catch{
-      return raw || "…";
+      return "…";
     }
 
-    let out = data?.choices?.[0]?.message?.content || raw || "…";
+    let out = data?.choices?.[0]?.message?.content || "…";
 
     // limpieza
     out = out.trim();
     out = out.split("\n").slice(0,2).join(" ");
 
-    if(out.length > 140){
-      out = out.slice(0,140);
+    if(out.length > 220){
+      out = out.slice(0,220) + "…";
     }
 
     return out;
@@ -108,14 +113,11 @@ app.post("/chat", async (req,res)=>{
     const userId = req.body?.userId || "anon";
     const mensaje = req.body?.mensaje || "hola";
 
-    // obtener memoria
     let memoria = await redis.get("mem:"+userId);
     memoria = memoria ? JSON.parse(memoria) : [];
 
-    // llamar IA
     const respuesta = await llamarIA(mensaje, memoria);
 
-    // guardar memoria
     memoria.push({u: mensaje, a: respuesta});
 
     if(memoria.length > 6){
@@ -127,7 +129,6 @@ app.post("/chat", async (req,res)=>{
     res.json({text: respuesta});
 
   }catch(e){
-    console.log("ERROR CHAT:", e.message);
     res.json({text:"…"});
   }
 });
