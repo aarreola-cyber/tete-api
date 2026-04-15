@@ -12,10 +12,10 @@ async function llamarIA(mensaje){
     const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
       method:"POST",
       headers:{
-        "Authorization":`Bearer ${process.env.VENICE_API_KEY.trim()}`,
+        "Authorization": `Bearer ${process.env.VENICE_API_KEY.trim()}`,
         "Content-Type":"application/json"
       },
-      body:JSON.stringify({
+      body: JSON.stringify({
         model:"venice-uncensored",
         messages:[
           { role:"user", content: mensaje }
@@ -25,11 +25,23 @@ async function llamarIA(mensaje){
       })
     });
 
-    const data = await resp.json();
+    const raw = await resp.text();
+    console.log("VENICE RAW:", raw);
 
-    console.log("VENICE:", data);
+    let data;
+    try{
+      data = JSON.parse(raw);
+    }catch{
+      return raw || "…";
+    }
 
-    return data?.choices?.[0]?.message?.content || "…";
+    return (
+      data?.choices?.[0]?.message?.content ||
+      data?.choices?.[0]?.text ||
+      data?.response ||
+      raw ||
+      "…"
+    );
 
   }catch(e){
     console.log("ERROR IA:", e.message);
@@ -40,7 +52,6 @@ async function llamarIA(mensaje){
 /* ================= CHAT ================= */
 
 app.post("/chat", async (req,res)=>{
-
   try{
     const {mensaje} = req.body;
 
@@ -60,7 +71,9 @@ app.post("/chat", async (req,res)=>{
 
 /* ================= ROOT ================= */
 
-app.get("/",(req,res)=>res.send("Tete API OK"));
+app.get("/", (req,res)=>{
+  res.send("Tete API OK");
+});
 
 /* ================= START ================= */
 
