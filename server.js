@@ -6,6 +6,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 console.log("API KEY:", process.env.VENICE_API_KEY);
+console.log("ENV:", Object.keys(process.env));
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 
 /* ================= DB ================= */
