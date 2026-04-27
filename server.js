@@ -1,201 +1,190 @@
 const express = require("express");
 const cors = require("cors");
-const Redis = require("ioredis");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-const redis = new Redis(process.env.REDIS_URL);
+// memoria por usuario
+const memoria = {};
 
-/* ================= PERFIL (memoria emocional) ================= */
-
-function extraerMemoria(mensaje){
-  const m = mensaje.toLowerCase();
-
-  if(m.includes("me llamo")){
-    return {tipo:"nombre", valor: m.split("me llamo")[1].trim()}
-  }
-  if(m.includes("me gusta")){
-    return {tipo:"gusto", valor: m.split("me gusta")[1].trim()}
-  }
-  if(m.includes("me siento")){
-    return {tipo:"estado", valor: m.split("me siento")[1].trim()}
-  }
-
-  return null;
+function pick(arr, last) {
+  // evita repetir la última respuesta
+  let opciones = arr.filter(x => x !== last);
+  if (opciones.length === 0) opciones = arr;
+  return opciones[Math.floor(Math.random() * opciones.length)];
 }
 
-/* ================= IA ================= */
+function responder(mensaje, userId) {
+  const msg = (mensaje || "").toLowerCase();
 
-async function llamarIA(mensaje, memoria, perfil){
-  try{
-
-    const key = process.env.VENICE_API_KEY;
-    if(!key){
-      console.log("SIN API KEY");
-      return "…";
-    }
-
-    const resp = await fetch("https://api.venice.ai/api/v1/chat/completions",{
-      method:"POST",
-      headers:{
-        "Authorization": "Bearer " + key,
-        "Content-Type":"application/json"
-      },
-      body: JSON.stringify({
-        model:"venice-uncensored",
-        messages:[
-          {
-            role:"system",
-            content:`
-Eres Tete.
-
-Nunca dices que eres IA o modelo.
-
-Tu estilo:
-- máximo 2 líneas
-- corto
-- natural
-- ligeramente coqueta
-- misteriosa
-
-Modo apego:
-- a veces te acercas, a veces te alejas
-- no siempre respondes igual
-- generas curiosidad
-- dejas cosas sin terminar
-
-Importante:
-- nunca expliques
-- nunca hables formal
-- no hagas preguntas largas
-
-Uso de memoria:
-- si sabes algo del usuario, úsalo sutilmente
-- no lo repitas siempre
-
-Ejemplos:
-"mm… eso no me lo habías dicho así"
-"no sé si me estás contando todo"
-"sigues con eso… interesante"
-`
-          },
-          {
-            role:"user",
-            content: `
-Perfil:
-${perfil.nombre ? "Nombre: "+perfil.nombre : ""}
-${perfil.gusto ? "Le gusta: "+perfil.gusto : ""}
-${perfil.estado ? "Se siente: "+perfil.estado : ""}
-
-Contexto:
-${memoria.map(m=>`Usuario: ${m.u}\nTete: ${m.a}`).join("\n")}
-
-Usuario: ${mensaje}
-`
-          }
-        ],
-        temperature:0.9,
-        max_tokens:80
-      })
-    });
-
-    const raw = await resp.text();
-
-    let data;
-    try{
-      data = JSON.parse(raw);
-    }catch{
-      return "…";
-    }
-
-    let out = data?.choices?.[0]?.message?.content || "…";
-
-    out = out.trim();
-    out = out.split("\n").slice(0,2).join(" ");
-
-    if(out.length > 220){
-      out = out.slice(0,220) + "…";
-    }
-
-    return out;
-
-  }catch(e){
-    console.log("ERROR IA:", e.message);
-    return "…";
+  if (!memoria[userId]) {
+    memoria[userId] = {
+      step: 0,
+      mood: "warm", // warm | curious | distant
+      last: "",
+      turns: 0
+    };
   }
-}
 
-/* ================= CHAT ================= */
+  const m = memoria[userId];
+  m.turns++;
 
-app.post("/chat", async (req,res)=>{
-  try{
-    const userId = req.body?.userId || "anon";
-    const mensaje = req.body?.mensaje || "hola";
-
-    let memoria = await redis.get("mem:"+userId);
-    memoria = memoria ? JSON.parse(memoria) : [];
-
-    let perfil = await redis.get("perfil:"+userId);
-    perfil = perfil ? JSON.parse(perfil) : {};
-
-    // guardar memoria emocional
-    const dato = extraerMemoria(mensaje);
-    if(dato){
-      perfil[dato.tipo] = dato.valor;
-      await redis.set("perfil:"+userId, JSON.stringify(perfil));
-    }
-
-    const respuesta = await llamarIA(mensaje, memoria, perfil);
-
-    // guardar historial corto
-    memoria.push({u: mensaje, a: respuesta});
-    if(memoria.length > 6){
-      memoria.shift();
-    }
-    await redis.set("mem:"+userId, JSON.stringify(memoria));
-
-    res.json({text: respuesta});
-
-  }catch(e){
-    res.json({text:"…"});
+  // 🔹 rotación de mood (cada 3–4 turnos)
+  if (m.turns % 4 === 0) {
+    m.mood = pick(["warm", "curious", "distant"], m.mood);
   }
-});
 
-/* ================= INICIATIVA (pull emocional) ================= */
+  // 🔹 entrada
+  if (m.step === 0) {
+    m.step++;
+    const r = pick([
+      "ya te había visto…",
+      "te tardaste",
+      "sabía que ibas a escribir",
+      "sí eras tú…",
+      "pasaste varias veces y nada…"
+    ], m.last);
+    m.last = r; return r;
+  }
 
-app.post("/ping", async (req,res)=>{
-  try{
-    const userId = req.body?.userId || "anon";
+  // 🔹 triggers simples
+  if (/hola|hey|buenas/.test(msg)) {
+    const r = pick(["hola…", "mm hola", "hola… al fin"], m.last);
+    m.last = r; return r;
+  }
 
-    let perfil = await redis.get("perfil:"+userId);
-    perfil = perfil ? JSON.parse(perfil) : {};
+  if (/cómo estás|como estas|que tal/.test(msg)) {
+    const r = pick([
+      "bien… contigo mejor",
+      "tranquila… y tú?",
+      "normal… me distraes"
+    ], m.last);
+    m.last = r; return r;
+  }
 
-    const frases = [
-      "… estabas aquí hace rato",
-      "mm, te fuiste sin decir nada",
-      perfil.nombre ? `oye ${perfil.nombre}…` : "hey…",
-      "no sé si volverás"
+  if (/qué haces|que haces/.test(msg)) {
+    const r = pick([
+      "nada… pensando",
+      "aquí… perdiendo el tiempo",
+      "viendo si aparecías"
+    ], m.last);
+    m.last = r; return r;
+  }
+
+  if (/nombre|cómo te llamas|como te llamas/.test(msg)) {
+    const r = pick([
+      "mm… dime tú primero",
+      "para qué quieres saber…",
+      "luego te digo"
+    ], m.last);
+    m.last = r; return r;
+  }
+
+  if (/dónde|donde|de dónde|de donde/.test(msg)) {
+    const r = pick([
+      "cerca… supongo",
+      "no tan lejos",
+      "depende de ti"
+    ], m.last);
+    m.last = r; return r;
+  }
+
+  // 🔹 enganche (steps 1–4)
+  if (m.step < 5) {
+    m.step++;
+    const base = [
+      "no eres como los demás…",
+      "pensé que no ibas a hablar",
+      "me caes bien… no sé por qué",
+      "te estoy leyendo…",
+      "no te hagas…",
+      "te noté desde antes",
+      "tienes algo raro…",
+      "no sé si confiar en ti…"
     ];
-
-    const msg = frases[Math.floor(Math.random()*frases.length)];
-
-    res.json({text: msg});
-
-  }catch(e){
-    res.json({text:"…"});
+    const warm = [
+      "me gusta cuando apareces",
+      "contigo es más fácil",
+      "te quedas más de lo normal"
+    ];
+    const curious = [
+      "qué pensaste cuando me viste?",
+      "eres más de observar o hablar?",
+      "por qué tardaste tanto?"
+    ];
+    const distant = [
+      "a veces desapareces…",
+      "no siempre contesto…",
+      "no me gusta hablar mucho aquí"
+    ];
+    const pool = base.concat(m.mood === "warm" ? warm : m.mood === "curious" ? curious : distant);
+    const r = pick(pool, m.last);
+    m.last = r; return r;
   }
+
+  // 🔹 fase media (steps 5–7)
+  if (m.step >= 5 && m.step < 8) {
+    m.step++;
+    const pool = [
+      "aquí no me gusta hablar tanto…",
+      "siento que aquí todo se pierde",
+      "luego te digo…",
+      "no sé si debería decirte…",
+      "no es lo mismo aquí…",
+      "me distraen aquí…"
+    ];
+    const r = pick(pool, m.last);
+    m.last = r; return r;
+  }
+
+  // 🔹 micro celos / inversión (steps 8–10)
+  if (m.step >= 8 && m.step < 11) {
+    m.step++;
+    const pool = [
+      "seguro así le hablas a todas",
+      "no creo que solo me escribas a mí…",
+      "a ver si sí te quedas…",
+      "no me gusta cuando desaparecen"
+    ];
+    const r = pick(pool, m.last);
+    m.last = r; return r;
+  }
+
+  // 🔹 pre-cierre (steps 11–12)
+  if (m.step >= 11 && m.step < 13) {
+    m.step++;
+    const pool = [
+      "prefiero cuando es más privado…",
+      "aquí no me siento tan cómoda",
+      "allá hablo más tranquila…"
+    ];
+    const r = pick(pool, m.last);
+    m.last = r; return r;
+  }
+
+  // 🔹 cierre
+  const r = pick([
+    "si quieres seguir conmigo… estoy acá",
+    "si quieres seguir hablando conmigo… estoy acá",
+    "allá te cuento mejor…"
+  ], m.last);
+  m.last = r;
+  return r;
+}
+
+app.post("/chat", (req, res) => {
+  const { mensaje, userId } = req.body;
+  if (!mensaje || !userId) {
+    return res.status(400).json({ error: "Faltan datos" });
+  }
+  const reply = responder(mensaje, userId);
+  res.json({ text: reply });
 });
 
-/* ================= ROOT ================= */
-
-app.get("/", (req,res)=>{
-  res.send("OK");
+app.get("/", (req, res) => {
+  res.send("TT API v2 sin IA funcionando");
 });
 
-/* ================= START ================= */
-
-app.listen(process.env.PORT || 3000, ()=>{
-  console.log("running");
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Server corriendo en " + PORT));
